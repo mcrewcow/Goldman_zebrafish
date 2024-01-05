@@ -35,6 +35,48 @@ ProcessSeu <- function(Seurat){
   return (Seurat)
 }
 
+counts <- Matrix::readMM('C://Users/rodri/Downloads/Zebrafish_LD_count_matrix.mtx')
+genes <- readr::read_tsv('C://Users/rodri/Downloads/Zebrafish_gene_feature.tsv', )
+features <- readr::read_tsv('C://Users/rodri/Downloads/Zebrafish_LD_cell_feature.tsv')
+colnames(counts) <- features$`#Barcode`
+rownames(counts) <- genes$Symbol
+LD <- CreateSeuratObject(counts = counts, project = "hippo_EK", min.cells = 3, min.features = 200)
+LD$Condition <- 'LD'
+
+ProcessSeu <- function(Seurat){
+  Seurat <- RunPCA(Seurat, npcs = 75)
+  Seurat <- FindNeighbors(Seurat, dims = 1:75)
+  Seurat <- FindClusters(Seurat, resolution = 1)
+  Seurat <- RunUMAP(Seurat, dims = 1:75)
+  Seurat <- RunTSNE(Seurat,  dims.use = 1:75)
+  DimPlot(object = Seurat, reduction = "umap")
+  return (Seurat)
+}
+LD <- FindVariableFeatures(LD, selection.method = "vst", nfeatures = 2000)
+
+s.genes <- cc.genes.updated.2019$s.genes
+g2m.genes <- cc.genes.updated.2019$g2m.genes
+
+convertHumanGeneList <- function(x){
+  require("biomaRt")
+  human = useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", mirror = "www", host = "dec2021.archive.ensembl.org")
+  mouse = useEnsembl("ensembl", dataset = "mmusculus_gene_ensembl", mirror = "www", host = "dec2021.archive.ensembl.org")
+  genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+  humanx <- unique(genesV2[, 2])
+  # Print the first 6 genes found to the screen
+  print(head(humanx))
+  return(humanx)
+}
+m.s.genes <- convertHumanGeneList(cc.genes.updated.2019$s.genes)
+m.g2m.genes <- convertHumanGeneList(cc.genes.updated.2019$g2m.genes)
+
+LD$percent.mito <- features$Percentage.of.mitochondrial.genes
+LD$percent.ribo <- features$Percentage.of.ribosomal.protein.genes
+LD <- CellCycleScoring(LD, s.features = m.s.genes, g2m.features = m.g2m.genes, set.ident = FALSE)
+
+LD <- ScaleData(LD, verbose = T, vars.to.regress = c('nCount_RNA', 'nFeature_RNA', 'percent.mito',"percent.ribo","S.Score","G2M.Score"))
+LD <- ProcessSeu(LD)
+
 zfAd00 <- ProcessSeu(zfAd00)
 zfNMDA04 <- ProcessSeu(zfNMDA04)
 zfNMDA10 <- ProcessSeu(zfNMDA10)
